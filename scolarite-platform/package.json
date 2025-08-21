@@ -1,0 +1,27 @@
+{
+  "name": "scolarite-platform",
+  "version": "1.0.0",
+  "description": "Plateforme de gestion de scolarité",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js",
+    "test": "jest",
+    "install-backend": "cd backend && npm install",
+    "install-all": "npm install && npm run install-backend"
+  },
+  "keywords": [
+    "scolarité",
+    "éducation",
+    "gestion",
+    "api"
+  ],
+  "author": "Votre Nom",
+  "license": "MIT",
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
