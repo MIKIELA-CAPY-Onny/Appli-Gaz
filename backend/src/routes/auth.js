@@ -1,124 +1,255 @@
 const express = require('express');
-const { body } = require('express-validator');
-const { authenticate } = require('../middleware/auth');
-const authController = require('../controllers/authController');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { body, validationResult } = require('express-validator');
+const pool = require('../../config/database');
 
 const router = express.Router();
 
-// Validation pour l'inscription
-const registerValidation = [
-  body('email')
-    .isEmail()
-    .normalizeEmail()
-    .withMessage('Email invalide'),
-  body('password')
-    .isLength({ min: 8 })
-    .withMessage('Le mot de passe doit contenir au moins 8 caractères')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .withMessage('Le mot de passe doit contenir au moins une minuscule, une majuscule, un chiffre et un caractère spécial'),
-  body('firstName')
-    .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage('Le prénom doit contenir entre 2 et 50 caractères'),
-  body('lastName')
-    .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage('Le nom doit contenir entre 2 et 50 caractères'),
-  body('phone')
-    .matches(/^(\+241|241)?[0-9]{8}$/)
-    .withMessage('Numéro de téléphone invalide (format Gabon)'),
-  body('role')
-    .optional()
-    .isIn(['patient', 'doctor', 'nurse', 'pharmacist', 'staff'])
-    .withMessage('Rôle invalide'),
-  body('dateOfBirth')
-    .optional()
-    .isISO8601()
-    .toDate()
-    .withMessage('Date de naissance invalide'),
-  body('gender')
-    .optional()
-    .isIn(['M', 'F', 'Other'])
-    .withMessage('Genre invalide'),
-  body('emergencyContact.name')
-    .if(body('role').equals('patient'))
-    .notEmpty()
-    .withMessage('Nom du contact d\'urgence requis pour les patients'),
-  body('emergencyContact.phone')
-    .if(body('role').equals('patient'))
-    .matches(/^(\+241|241)?[0-9]{8}$/)
-    .withMessage('Téléphone du contact d\'urgence invalide'),
-  body('emergencyContact.relationship')
-    .if(body('role').equals('patient'))
-    .notEmpty()
-    .withMessage('Relation du contact d\'urgence requise')
-];
+// Connexion utilisateur
+router.post('/login', [
+  body('email').isEmail().withMessage('Email invalide'),
+  body('mot_de_passe').notEmpty().withMessage('Mot de passe requis')
+], async (req, res) => {
+  try {
+    // Validation des données
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        error: 'Données invalides', 
+        details: errors.array() 
+      });
+    }
 
-// Validation pour la connexion
-const loginValidation = [
-  body('email')
-    .isEmail()
-    .normalizeEmail()
-    .withMessage('Email invalide'),
-  body('password')
-    .notEmpty()
-    .withMessage('Mot de passe requis'),
-  body('twoFactorCode')
-    .optional()
-    .isLength({ min: 6, max: 6 })
-    .isNumeric()
-    .withMessage('Code 2FA invalide')
-];
+    const { email, mot_de_passe } = req.body;
 
-// Validation pour la réinitialisation de mot de passe
-const passwordResetValidation = [
-  body('token')
-    .notEmpty()
-    .withMessage('Token requis'),
-  body('newPassword')
-    .isLength({ min: 8 })
-    .withMessage('Le mot de passe doit contenir au moins 8 caractères')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .withMessage('Le nouveau mot de passe doit contenir au moins une minuscule, une majuscule, un chiffre et un caractère spécial')
-];
+    // Rechercher l'utilisateur
+    const [rows] = await pool.execute(
+      'SELECT * FROM utilisateurs WHERE email = ?',
+      [email]
+    );
 
-// Validation pour l'activation 2FA
-const enable2FAValidation = [
-  body('token')
-    .isLength({ min: 6, max: 6 })
-    .isNumeric()
-    .withMessage('Code 2FA invalide'),
-  body('secret')
-    .notEmpty()
-    .withMessage('Secret 2FA requis')
-];
+    if (rows.length === 0) {
+      return res.status(401).json({ 
+        error: 'Authentification échouée', 
+        message: 'Email ou mot de passe incorrect' 
+      });
+    }
 
-// Routes publiques
-router.post('/register', registerValidation, authController.register);
-router.post('/login', loginValidation, authController.login);
-router.post('/forgot-password', 
-  body('email').isEmail().normalizeEmail().withMessage('Email invalide'),
-  authController.forgotPassword
-);
-router.post('/reset-password', passwordResetValidation, authController.resetPassword);
-router.get('/verify-email/:token', authController.verifyEmail);
-router.post('/refresh-token',
-  body('refreshToken').notEmpty().withMessage('Refresh token requis'),
-  authController.refreshToken
-);
+    const user = rows[0];
 
-// Routes protégées (nécessitent une authentification)
-router.use(authenticate); // Middleware d'authentification pour toutes les routes suivantes
+    // Vérifier le mot de passe
+    const isPasswordValid = await bcrypt.compare(mot_de_passe, user.mot_de_passe);
+    if (!isPasswordValid) {
+      return res.status(401).json({ 
+        error: 'Authentification échouée', 
+        message: 'Email ou mot de passe incorrect' 
+      });
+    }
 
-router.post('/logout', authController.logout);
-router.get('/profile', authController.getProfile);
+    // Générer le token JWT
+    const token = jwt.sign(
+      { 
+        userId: user.id, 
+        email: user.email, 
+        role: user.role 
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+    );
 
-// Routes 2FA
-router.get('/2fa/setup', authController.setup2FA);
-router.post('/2fa/enable', enable2FAValidation, authController.enable2FA);
-router.post('/2fa/disable',
-  body('password').notEmpty().withMessage('Mot de passe requis'),
-  authController.disable2FA
-);
+    // Retourner les informations utilisateur (sans le mot de passe)
+    const { mot_de_passe: _, ...userWithoutPassword } = user;
+
+    res.json({
+      message: 'Connexion réussie',
+      user: userWithoutPassword,
+      token,
+      expiresIn: process.env.JWT_EXPIRES_IN || '24h'
+    });
+
+  } catch (error) {
+    console.error('Erreur de connexion:', error);
+    res.status(500).json({ 
+      error: 'Erreur interne du serveur', 
+      message: 'Erreur lors de la connexion' 
+    });
+  }
+});
+
+// Inscription d'un nouvel utilisateur (admin seulement)
+router.post('/register', [
+  body('matricule').notEmpty().withMessage('Matricule requis'),
+  body('nom').notEmpty().withMessage('Nom requis'),
+  body('prenom').notEmpty().withMessage('Prénom requis'),
+  body('email').isEmail().withMessage('Email invalide'),
+  body('mot_de_passe').isLength({ min: 6 }).withMessage('Mot de passe doit contenir au moins 6 caractères'),
+  body('role').isIn(['admin', 'enseignant', 'etudiant']).withMessage('Rôle invalide')
+], async (req, res) => {
+  try {
+    // Validation des données
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        error: 'Données invalides', 
+        details: errors.array() 
+      });
+    }
+
+    const { matricule, nom, prenom, email, mot_de_passe, role, date_naissance, telephone, adresse } = req.body;
+
+    // Vérifier si l'email ou le matricule existe déjà
+    const [existingUsers] = await pool.execute(
+      'SELECT id FROM utilisateurs WHERE email = ? OR matricule = ?',
+      [email, matricule]
+    );
+
+    if (existingUsers.length > 0) {
+      return res.status(400).json({ 
+        error: 'Utilisateur existant', 
+        message: 'Un utilisateur avec cet email ou matricule existe déjà' 
+      });
+    }
+
+    // Hasher le mot de passe
+    const saltRounds = parseInt(process.env.BCRYPT_ROUNDS) || 12;
+    const hashedPassword = await bcrypt.hash(mot_de_passe, saltRounds);
+
+    // Insérer le nouvel utilisateur
+    const [result] = await pool.execute(
+      `INSERT INTO utilisateurs (matricule, nom, prenom, email, mot_de_passe, role, date_naissance, telephone, adresse) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [matricule, nom, prenom, email, hashedPassword, role, date_naissance, telephone, adresse]
+    );
+
+    // Récupérer l'utilisateur créé
+    const [newUser] = await pool.execute(
+      'SELECT id, matricule, nom, prenom, email, role, date_naissance, telephone, adresse, date_creation FROM utilisateurs WHERE id = ?',
+      [result.insertId]
+    );
+
+    res.status(201).json({
+      message: 'Utilisateur créé avec succès',
+      user: newUser[0]
+    });
+
+  } catch (error) {
+    console.error('Erreur d\'inscription:', error);
+    res.status(500).json({ 
+      error: 'Erreur interne du serveur', 
+      message: 'Erreur lors de l\'inscription' 
+    });
+  }
+});
+
+// Vérifier le token (pour vérifier si l'utilisateur est toujours connecté)
+router.get('/verify', async (req, res) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({ 
+        error: 'Token manquant', 
+        message: 'Token d\'authentification requis' 
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Récupérer les informations utilisateur
+    const [rows] = await pool.execute(
+      'SELECT id, matricule, nom, prenom, email, role, date_naissance, telephone, adresse FROM utilisateurs WHERE id = ?',
+      [decoded.userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({ 
+        error: 'Utilisateur non trouvé', 
+        message: 'Token invalide' 
+      });
+    }
+
+    res.json({
+      valid: true,
+      user: rows[0]
+    });
+
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({ 
+        valid: false,
+        error: 'Token invalide ou expiré' 
+      });
+    }
+
+    console.error('Erreur de vérification:', error);
+    res.status(500).json({ 
+      error: 'Erreur interne du serveur', 
+      message: 'Erreur lors de la vérification du token' 
+    });
+  }
+});
+
+// Changer le mot de passe
+router.post('/change-password', [
+  body('ancien_mot_de_passe').notEmpty().withMessage('Ancien mot de passe requis'),
+  body('nouveau_mot_de_passe').isLength({ min: 6 }).withMessage('Nouveau mot de passe doit contenir au moins 6 caractères')
+], async (req, res) => {
+  try {
+    // Validation des données
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        error: 'Données invalides', 
+        details: errors.array() 
+      });
+    }
+
+    const { ancien_mot_de_passe, nouveau_mot_de_passe } = req.body;
+    const userId = req.user.id;
+
+    // Récupérer l'utilisateur
+    const [rows] = await pool.execute(
+      'SELECT mot_de_passe FROM utilisateurs WHERE id = ?',
+      [userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ 
+        error: 'Utilisateur non trouvé' 
+      });
+    }
+
+    // Vérifier l'ancien mot de passe
+    const isOldPasswordValid = await bcrypt.compare(ancien_mot_de_passe, rows[0].mot_de_passe);
+    if (!isOldPasswordValid) {
+      return res.status(400).json({ 
+        error: 'Mot de passe incorrect', 
+        message: 'L\'ancien mot de passe est incorrect' 
+      });
+    }
+
+    // Hasher le nouveau mot de passe
+    const saltRounds = parseInt(process.env.BCRYPT_ROUNDS) || 12;
+    const hashedNewPassword = await bcrypt.hash(nouveau_mot_de_passe, saltRounds);
+
+    // Mettre à jour le mot de passe
+    await pool.execute(
+      'UPDATE utilisateurs SET mot_de_passe = ? WHERE id = ?',
+      [hashedNewPassword, userId]
+    );
+
+    res.json({
+      message: 'Mot de passe modifié avec succès'
+    });
+
+  } catch (error) {
+    console.error('Erreur de changement de mot de passe:', error);
+    res.status(500).json({ 
+      error: 'Erreur interne du serveur', 
+      message: 'Erreur lors du changement de mot de passe' 
+    });
+  }
+});
 
 module.exports = router;
