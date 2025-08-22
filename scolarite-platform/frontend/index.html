@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GestiScolarité - Plateforme de Gestion Universitaire</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Vue.js -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Axios pour les requêtes HTTP -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --danger-color: #e74c3c;
+            --light-bg: #ecf0f1;
+            --dark-text: #2c3e50;
+        }
+
+        body {
+            background-color: var(--light-bg);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .navbar-brand {
+            font-weight: bold;
+            color: white !important;
+        }
+
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-card {
+            max-width: 400px;
+            width: 100%;
+        }
+
+        .dashboard-stats .card {
+            background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
+            color: white;
+        }
+
+        .sidebar {
+            background-color: var(--primary-color);
+            min-height: calc(100vh - 56px);
+        }
+
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            transition: all 0.2s;
+        }
+
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: white;
+            background-color: rgba(255,255,255,0.1);
+            border-radius: 5px;
+        }
+
+        .table-responsive {
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .badge {
+            font-size: 0.75em;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .alert {
+            border-radius: 10px;
+            border: none;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                min-height: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Navigation -->
+        <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: var(--primary-color);">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">
+                    <i class="fas fa-graduation-cap me-2"></i>
+                    GestiScolarité
+                </a>
+                
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav ms-auto" v-if="user">
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-user-circle me-1"></i>
+                                {{ user.first_name }} {{ user.last_name }}
+                                <span class="badge bg-secondary ms-1">{{ user.role }}</span>
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="#" @click="showProfile">
+                                    <i class="fas fa-user me-2"></i>Profil
+                                </a></li>
+                                <li><a class="dropdown-item" href="#" @click="changePassword">
+                                    <i class="fas fa-key me-2"></i>Changer mot de passe
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="#" @click="logout">
+                                    <i class="fas fa-sign-out-alt me-2"></i>Déconnexion
+                                </a></li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Page de connexion -->
+        <div v-if="!isAuthenticated" class="login-container">
+            <div class="login-card">
+                <div class="card">
+                    <div class="card-body p-4">
+                        <div class="text-center mb-4">
+                            <i class="fas fa-graduation-cap fa-3x text-primary mb-3"></i>
+                            <h3 class="card-title">Connexion</h3>
+                            <p class="text-muted">Accédez à votre espace de scolarité</p>
+                        </div>
+
+                        <div v-if="loginError" class="alert alert-danger" role="alert">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            {{ loginError }}
+                        </div>
+
+                        <form @submit.prevent="login">
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">
+                                        <i class="fas fa-envelope"></i>
+                                    </span>
+                                    <input 
+                                        type="email" 
+                                        class="form-control" 
+                                        id="email" 
+                                        v-model="loginForm.email"
+                                        placeholder="votre.email@university.com"
+                                        required
+                                    >
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Mot de passe</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">
+                                        <i class="fas fa-lock"></i>
+                                    </span>
+                                    <input 
+                                        type="password" 
+                                        class="form-control" 
+                                        id="password" 
+                                        v-model="loginForm.password"
+                                        placeholder="Votre mot de passe"
+                                        required
+                                    >
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100 mb-3" :disabled="isLoading">
+                                <span v-if="isLoading" class="spinner-border spinner-border-sm me-2"></span>
+                                <i v-else class="fas fa-sign-in-alt me-2"></i>
+                                {{ isLoading ? 'Connexion...' : 'Se connecter' }}
+                            </button>
+                        </form>
+
+                        <div class="text-center">
+                            <small class="text-muted">
+                                Comptes de test disponibles:<br>
+                                <strong>Admin:</strong> admin@university.com / password123<br>
+                                <strong>Enseignant:</strong> teacher1@university.com / password123<br>
+                                <strong>Étudiant:</strong> student1@university.com / password123
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard principal -->
+        <div v-if="isAuthenticated" class="container-fluid">
+            <div class="row">
+                <!-- Sidebar -->
+                <div class="col-md-3 col-lg-2 sidebar p-0">
+                    <div class="p-3">
+                        <nav class="nav flex-column">
+                            <a class="nav-link" :class="{ active: currentView === 'dashboard' }" 
+                               href="#" @click="currentView = 'dashboard'">
+                                <i class="fas fa-tachometer-alt me-2"></i>
+                                Tableau de bord
+                            </a>
+                            
+                            <a v-if="user.role === 'admin' || user.role === 'teacher'" 
+                               class="nav-link" :class="{ active: currentView === 'students' }" 
+                               href="#" @click="loadStudents">
+                                <i class="fas fa-user-graduate me-2"></i>
+                                Étudiants
+                            </a>
+                            
+                            <a v-if="user.role === 'admin'" 
+                               class="nav-link" :class="{ active: currentView === 'teachers' }" 
+                               href="#" @click="loadTeachers">
+                                <i class="fas fa-chalkboard-teacher me-2"></i>
+                                Enseignants
+                            </a>
+                            
+                            <a v-if="user.role === 'admin' || user.role === 'teacher'" 
+                               class="nav-link" :class="{ active: currentView === 'courses' }" 
+                               href="#" @click="loadCourses">
+                                <i class="fas fa-book me-2"></i>
+                                Cours
+                            </a>
+                            
+                            <a class="nav-link" :class="{ active: currentView === 'grades' }" 
+                               href="#" @click="loadGrades">
+                                <i class="fas fa-chart-line me-2"></i>
+                                Notes
+                            </a>
+                            
+                            <a class="nav-link" :class="{ active: currentView === 'absences' }" 
+                               href="#" @click="loadAbsences">
+                                <i class="fas fa-calendar-times me-2"></i>
+                                Absences
+                            </a>
+                            
+                            <a v-if="user.role === 'student'" 
+                               class="nav-link" :class="{ active: currentView === 'enrollments' }" 
+                               href="#" @click="loadMyEnrollments">
+                                <i class="fas fa-clipboard-list me-2"></i>
+                                Mes Inscriptions
+                            </a>
+                        </nav>
+                    </div>
+                </div>
+
+                <!-- Contenu principal -->
+                <div class="col-md-9 col-lg-10 ms-sm-auto px-md-4">
+                    <div class="py-4">
+                        <!-- Dashboard -->
+                        <div v-if="currentView === 'dashboard'">
+                            <div class="d-flex justify-content-between align-items-center mb-4">
+                                <h2>
+                                    <i class="fas fa-tachometer-alt me-2"></i>
+                                    Tableau de bord
+                                </h2>
+                                <span class="badge bg-success">{{ user.role.toUpperCase() }}</span>
+                            </div>
+
+                            <div class="row dashboard-stats mb-4">
+                                <div class="col-md-3 mb-3">
+                                    <div class="card">
+                                        <div class="card-body text-center">
+                                            <i class="fas fa-user-graduate fa-2x mb-2"></i>
+                                            <h4>{{ stats.students || 0 }}</h4>
+                                            <p class="mb-0">Étudiants</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <div class="card">
+                                        <div class="card-body text-center">
+                                            <i class="fas fa-chalkboard-teacher fa-2x mb-2"></i>
+                                            <h4>{{ stats.teachers || 0 }}</h4>
+                                            <p class="mb-0">Enseignants</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <div class="card">
+                                        <div class="card-body text-center">
+                                            <i class="fas fa-book fa-2x mb-2"></i>
+                                            <h4>{{ stats.courses || 0 }}</h4>
+                                            <p class="mb-0">Cours</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 mb-3">
+                                    <div class="card">
+                                        <div class="card-body text-center">
+                                            <i class="fas fa-chart-line fa-2x mb-2"></i>
+                                            <h4>{{ stats.grades || 0 }}</h4>
+                                            <p class="mb-0">Notes</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h5 class="mb-0">
+                                                <i class="fas fa-info-circle me-2"></i>
+                                                Informations
+                                            </h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <p>Bienvenue sur la plateforme GestiScolarité !</p>
+                                            <p>Cette interface vous permet de gérer :</p>
+                                            <ul>
+                                                <li><strong>Étudiants</strong> - Gestion des profils et inscriptions</li>
+                                                <li><strong>Enseignants</strong> - Gestion du personnel enseignant</li>
+                                                <li><strong>Cours</strong> - Catalogue des formations</li>
+                                                <li><strong>Notes</strong> - Saisie et consultation des évaluations</li>
+                                                <li><strong>Absences</strong> - Suivi de l'assiduité</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h5 class="mb-0">
+                                                <i class="fas fa-user me-2"></i>
+                                                Mon Profil
+                                            </h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <p><strong>Nom:</strong> {{ user.first_name }} {{ user.last_name }}</p>
+                                            <p><strong>Email:</strong> {{ user.email }}</p>
+                                            <p><strong>Rôle:</strong> 
+                                                <span class="badge bg-primary">{{ user.role }}</span>
+                                            </p>
+                                            <p v-if="roleData">
+                                                <strong v-if="user.role === 'student'">Niveau:</strong>
+                                                <strong v-if="user.role === 'teacher'">Département:</strong>
+                                                <strong v-if="user.role === 'admin'">Service:</strong>
+                                                {{ getRoleSpecificInfo() }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Liste des étudiants -->
+                        <div v-if="currentView === 'students'">
+                            <div class="d-flex justify-content-between align-items-center mb-4">
+                                <h2>
+                                    <i class="fas fa-user-graduate me-2"></i>
+                                    Gestion des Étudiants
+                                </h2>
+                                <button v-if="user.role === 'admin'" class="btn btn-primary" @click="showCreateStudent = true">
+                                    <i class="fas fa-plus me-2"></i>
+                                    Nouvel Étudiant
+                                </button>
+                            </div>
+
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <input type="text" class="form-control" placeholder="Rechercher un étudiant..." 
+                                                   v-model="searchQuery" @input="searchStudents">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <select class="form-select" v-model="filterLevel" @change="loadStudents">
+                                                <option value="">Tous les niveaux</option>
+                                                <option value="L1">L1</option>
+                                                <option value="L2">L2</option>
+                                                <option value="L3">L3</option>
+                                                <option value="M1">M1</option>
+                                                <option value="M2">M2</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="isLoading" class="loading">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Chargement...</span>
+                                        </div>
+                                    </div>
+
+                                    <div v-else class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Numéro</th>
+                                                    <th>Nom</th>
+                                                    <th>Email</th>
+                                                    <th>Niveau</th>
+                                                    <th>Statut</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="student in students" :key="student.id">
+                                                    <td>{{ student.student_number }}</td>
+                                                    <td>{{ student.first_name }} {{ student.last_name }}</td>
+                                                    <td>{{ student.email }}</td>
+                                                    <td><span class="badge bg-info">{{ student.level }}</span></td>
+                                                    <td>
+                                                        <span class="badge" 
+                                                              :class="getStatusBadgeClass(student.status)">
+                                                            {{ student.status }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <button class="btn btn-sm btn-outline-primary me-1" 
+                                                                @click="viewStudent(student)">
+                                                            <i class="fas fa-eye"></i>
+                                                        </button>
+                                                        <button v-if="user.role === 'admin'" 
+                                                                class="btn btn-sm btn-outline-warning me-1"
+                                                                @click="editStudent(student)">
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <!-- Pagination -->
+                                    <nav v-if="pagination && pagination.totalPages > 1" aria-label="Navigation des pages">
+                                        <ul class="pagination justify-content-center">
+                                            <li class="page-item" :class="{ disabled: !pagination.hasPrev }">
+                                                <a class="page-link" href="#" @click.prevent="changePage(pagination.page - 1)">
+                                                    Précédent
+                                                </a>
+                                            </li>
+                                            <li class="page-item" 
+                                                v-for="page in getPageNumbers()" 
+                                                :key="page"
+                                                :class="{ active: page === pagination.page }">
+                                                <a class="page-link" href="#" @click.prevent="changePage(page)">
+                                                    {{ page }}
+                                                </a>
+                                            </li>
+                                            <li class="page-item" :class="{ disabled: !pagination.hasNext }">
+                                                <a class="page-link" href="#" @click.prevent="changePage(pagination.page + 1)">
+                                                    Suivant
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </nav>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Autres vues (placeholder) -->
+                        <div v-if="currentView === 'teachers'">
+                            <h2><i class="fas fa-chalkboard-teacher me-2"></i>Gestion des Enseignants</h2>
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Interface enseignants en cours de développement...
+                            </div>
+                        </div>
+
+                        <div v-if="currentView === 'courses'">
+                            <h2><i class="fas fa-book me-2"></i>Gestion des Cours</h2>
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Interface cours en cours de développement...
+                            </div>
+                        </div>
+
+                        <div v-if="currentView === 'grades'">
+                            <h2><i class="fas fa-chart-line me-2"></i>Gestion des Notes</h2>
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Interface notes en cours de développement...
+                            </div>
+                        </div>
+
+                        <div v-if="currentView === 'absences'">
+                            <h2><i class="fas fa-calendar-times me-2"></i>Gestion des Absences</h2>
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Interface absences en cours de développement...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Messages toast -->
+        <div class="toast-container position-fixed bottom-0 end-0 p-3">
+            <div v-for="(toast, index) in toasts" :key="index" 
+                 class="toast show" role="alert" 
+                 :class="'bg-' + toast.type">
+                <div class="toast-header">
+                    <strong class="me-auto">{{ toast.title }}</strong>
+                    <button type="button" class="btn-close" @click="removeToast(index)"></button>
+                </div>
+                <div class="toast-body text-white">
+                    {{ toast.message }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    // Authentification
+                    isAuthenticated: false,
+                    user: null,
+                    roleData: null,
+                    token: null,
+                    
+                    // Interface
+                    currentView: 'dashboard',
+                    isLoading: false,
+                    searchQuery: '',
+                    filterLevel: '',
+                    
+                    // Formulaires
+                    loginForm: {
+                        email: '',
+                        password: ''
+                    },
+                    loginError: '',
+                    
+                    // Données
+                    students: [],
+                    teachers: [],
+                    courses: [],
+                    grades: [],
+                    absences: [],
+                    stats: {},
+                    pagination: null,
+                    
+                    // UI
+                    toasts: [],
+                    showCreateStudent: false,
+                    
+                    // Configuration API
+                    apiBaseUrl: 'http://localhost:3000/api/v1'
+                }
+            },
+            
+            computed: {
+                axiosConfig() {
+                    return {
+                        headers: {
+                            'Authorization': this.token ? `Bearer ${this.token}` : '',
+                            'Content-Type': 'application/json'
+                        }
+                    };
+                }
+            },
+            
+            methods: {
+                // Authentification
+                async login() {
+                    this.isLoading = true;
+                    this.loginError = '';
+                    
+                    try {
+                        const response = await axios.post(`${this.apiBaseUrl}/auth/login`, this.loginForm);
+                        
+                        if (response.data.success) {
+                            this.user = response.data.data.user;
+                            this.roleData = response.data.data.roleData;
+                            this.token = response.data.data.accessToken;
+                            this.isAuthenticated = true;
+                            
+                            // Sauvegarder dans localStorage
+                            localStorage.setItem('token', this.token);
+                            localStorage.setItem('user', JSON.stringify(this.user));
+                            
+                            this.showToast('Connexion réussie', 'Bienvenue !', 'success');
+                            this.loadDashboardStats();
+                        }
+                    } catch (error) {
+                        this.loginError = error.response?.data?.message || 'Erreur de connexion';
+                        this.showToast('Erreur', this.loginError, 'danger');
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                
+                logout() {
+                    this.isAuthenticated = false;
+                    this.user = null;
+                    this.roleData = null;
+                    this.token = null;
+                    this.currentView = 'dashboard';
+                    
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    
+                    this.showToast('Déconnexion', 'À bientôt !', 'info');
+                },
+                
+                // Chargement des données
+                async loadStudents() {
+                    this.currentView = 'students';
+                    this.isLoading = true;
+                    
+                    try {
+                        const params = new URLSearchParams();
+                        if (this.filterLevel) params.append('level', this.filterLevel);
+                        if (this.searchQuery) params.append('search', this.searchQuery);
+                        
+                        const response = await axios.get(
+                            `${this.apiBaseUrl}/students?${params}`, 
+                            this.axiosConfig
+                        );
+                        
+                        if (response.data.success) {
+                            this.students = response.data.data.students;
+                            this.pagination = response.data.data.pagination;
+                        }
+                    } catch (error) {
+                        this.showToast('Erreur', 'Impossible de charger les étudiants', 'danger');
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                
+                async loadDashboardStats() {
+                    try {
+                        // Simuler des statistiques (à remplacer par de vraies requêtes API)
+                        this.stats = {
+                            students: 156,
+                            teachers: 24,
+                            courses: 45,
+                            grades: 1250
+                        };
+                    } catch (error) {
+                        console.error('Erreur lors du chargement des statistiques:', error);
+                    }
+                },
+                
+                // Navigation
+                changePage(page) {
+                    if (page >= 1 && page <= this.pagination.totalPages) {
+                        // Recharger les données avec la nouvelle page
+                        this.loadStudents();
+                    }
+                },
+                
+                // Utilitaires
+                showToast(title, message, type = 'info') {
+                    const toast = { title, message, type };
+                    this.toasts.push(toast);
+                    
+                    // Supprimer automatiquement après 5 secondes
+                    setTimeout(() => {
+                        this.removeToast(this.toasts.indexOf(toast));
+                    }, 5000);
+                },
+                
+                removeToast(index) {
+                    this.toasts.splice(index, 1);
+                },
+                
+                getStatusBadgeClass(status) {
+                    const classes = {
+                        'active': 'bg-success',
+                        'suspended': 'bg-warning',
+                        'graduated': 'bg-info',
+                        'dropped': 'bg-danger'
+                    };
+                    return classes[status] || 'bg-secondary';
+                },
+                
+                getRoleSpecificInfo() {
+                    if (!this.roleData) return '';
+                    
+                    switch (this.user.role) {
+                        case 'student':
+                            return this.roleData.level || '';
+                        case 'teacher':
+                            return this.roleData.department || '';
+                        case 'admin':
+                            return this.roleData.department || '';
+                        default:
+                            return '';
+                    }
+                },
+                
+                getPageNumbers() {
+                    if (!this.pagination) return [];
+                    
+                    const pages = [];
+                    const start = Math.max(1, this.pagination.page - 2);
+                    const end = Math.min(this.pagination.totalPages, this.pagination.page + 2);
+                    
+                    for (let i = start; i <= end; i++) {
+                        pages.push(i);
+                    }
+                    
+                    return pages;
+                },
+                
+                // Actions placeholder
+                viewStudent(student) {
+                    this.showToast('Info', `Voir détails de ${student.first_name} ${student.last_name}`, 'info');
+                },
+                
+                editStudent(student) {
+                    this.showToast('Info', `Éditer ${student.first_name} ${student.last_name}`, 'info');
+                },
+                
+                searchStudents() {
+                    // Débounce la recherche
+                    clearTimeout(this.searchTimeout);
+                    this.searchTimeout = setTimeout(() => {
+                        this.loadStudents();
+                    }, 500);
+                },
+                
+                loadTeachers() {
+                    this.currentView = 'teachers';
+                },
+                
+                loadCourses() {
+                    this.currentView = 'courses';
+                },
+                
+                loadGrades() {
+                    this.currentView = 'grades';
+                },
+                
+                loadAbsences() {
+                    this.currentView = 'absences';
+                },
+                
+                loadMyEnrollments() {
+                    this.currentView = 'enrollments';
+                },
+                
+                showProfile() {
+                    this.showToast('Info', 'Profil utilisateur', 'info');
+                },
+                
+                changePassword() {
+                    this.showToast('Info', 'Changement de mot de passe', 'info');
+                }
+            },
+            
+            async mounted() {
+                // Vérifier si l'utilisateur est déjà connecté
+                const savedToken = localStorage.getItem('token');
+                const savedUser = localStorage.getItem('user');
+                
+                if (savedToken && savedUser) {
+                    try {
+                        // Vérifier la validité du token
+                        const response = await axios.post(
+                            `${this.apiBaseUrl}/auth/verify-token`,
+                            { token: savedToken }
+                        );
+                        
+                        if (response.data.success && response.data.data.valid) {
+                            this.token = savedToken;
+                            this.user = JSON.parse(savedUser);
+                            this.isAuthenticated = true;
+                            this.loadDashboardStats();
+                        } else {
+                            // Token invalide, nettoyer
+                            localStorage.removeItem('token');
+                            localStorage.removeItem('user');
+                        }
+                    } catch (error) {
+                        // En cas d'erreur, nettoyer
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('user');
+                    }
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
